@@ -226,14 +226,15 @@ export function calculatePickUpScore(minDist, reachedFloor, feetEverMoved, lostB
   if (lostBalance) {
     return { score: 0, reason: '균형을 잃어 외부 지지가 필요합니다' };
   }
-  if (reachedFloor && !feetEverMoved) {
-    return { score: 4, reason: '안전하고 쉽게 물건을 집을 수 있음' };
-  }
-  if (reachedFloor && feetEverMoved) {
-    return { score: 3, reason: '물건을 집었으나 감독이 필요함' };
+  // 바닥 도달 여부 + 거리만으로 판정 — 방법 불문
+  if (reachedFloor) {
+    return { score: 4, reason: '바닥의 물건에 도달함' };
   }
   if (minDist <= 5) {
-    return { score: 2, reason: `바닥까지 ${minDist.toFixed(1)}cm — 바닥 미도달, 균형 유지` };
+    return { score: 3, reason: `바닥까지 ${minDist.toFixed(1)}cm — 근접 도달` };
+  }
+  if (minDist <= 10) {
+    return { score: 2, reason: `바닥까지 ${minDist.toFixed(1)}cm — 제한적 도달` };
   }
   if (minDist > 0) {
     return { score: 1, reason: `바닥까지 ${minDist.toFixed(1)}cm — 감독 필요` };

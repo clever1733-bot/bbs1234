@@ -238,18 +238,17 @@ export function calculateLookBehindScore(leftRot, rightRot, leftWS, rightWS, fee
     return { score: 0, reason: '균형을 잃어 도움이 필요합니다' };
   }
 
+  // 순수 회전 각도만으로 판정 — 방법 불문
   const GOOD_ROTATION = 45;     // 우수 기준 (도)
   const MODERATE_ROTATION = 30; // 보통 기준 (도)
-  const GOOD_WEIGHT_SHIFT = 0.02; // 체중 이동 기준 (정규화)
 
   const leftGood = leftRot >= GOOD_ROTATION;
   const rightGood = rightRot >= GOOD_ROTATION;
   const leftModerate = leftRot >= MODERATE_ROTATION;
   const rightModerate = rightRot >= MODERATE_ROTATION;
-  const hasWeightShift = leftWS >= GOOD_WEIGHT_SHIFT || rightWS >= GOOD_WEIGHT_SHIFT;
 
-  // 4점: 양쪽 우수 + 체중 이동 + 발 고정
-  if (leftGood && rightGood && hasWeightShift && !feetMoved) {
+  // 4점: 양쪽 우수
+  if (leftGood && rightGood) {
     return { score: 4, reason: `양쪽 뒤돌아보기 우수 (좌 ${leftRot}° / 우 ${rightRot}°)` };
   }
 
@@ -258,9 +257,9 @@ export function calculateLookBehindScore(leftRot, rightRot, leftWS, rightWS, fee
     return { score: 3, reason: `한쪽 우수, 다른 쪽 보통 (좌 ${leftRot}° / 우 ${rightRot}°)` };
   }
 
-  // 2점: 한쪽이라도 보통 이상 + 균형 유지
+  // 2점: 한쪽이라도 보통 이상
   if (leftModerate || rightModerate) {
-    return { score: 2, reason: `제한적 회전, 균형 유지 (좌 ${leftRot}° / 우 ${rightRot}°)` };
+    return { score: 2, reason: `제한적 회전 (좌 ${leftRot}° / 우 ${rightRot}°)` };
   }
 
   // 1점: 약간의 회전 시도

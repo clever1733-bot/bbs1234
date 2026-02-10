@@ -292,21 +292,18 @@ export function calculateArmReachScore(maxReach, feetMoved, lostBalance) {
   if (lostBalance) {
     return { score: 0, reason: '균형을 잃어 외부 지지가 필요합니다' };
   }
-  // BBS 원래 기준: 거리 기반 채점 (발 움직임은 4점에서만 감점)
+  // 거리 기반 채점 — 방법 불문, 도달 거리만으로 판정
   if (maxReach >= 25) {
-    if (feetMoved) {
-      return { score: 3, reason: `${maxReach.toFixed(1)}cm - 25cm 이상이나 발 움직임 감지` };
-    }
-    return { score: 4, reason: `${maxReach.toFixed(1)}cm - 자신 있게 뻗을 수 있음` };
+    return { score: 4, reason: `${maxReach.toFixed(1)}cm — 25cm 이상 도달` };
   }
   if (maxReach >= 12.5) {
-    return { score: 3, reason: `${maxReach.toFixed(1)}cm - 안전하게 뻗을 수 있음` };
+    return { score: 3, reason: `${maxReach.toFixed(1)}cm — 12.5cm 이상 도달` };
   }
   if (maxReach >= 5) {
-    return { score: 2, reason: `${maxReach.toFixed(1)}cm - 제한적으로 뻗을 수 있음` };
+    return { score: 2, reason: `${maxReach.toFixed(1)}cm — 5cm 이상 도달` };
   }
   if (maxReach > 0) {
-    return { score: 1, reason: `${maxReach.toFixed(1)}cm - 감독 필요` };
+    return { score: 1, reason: `${maxReach.toFixed(1)}cm — 감독 필요` };
   }
   return { score: 0, reason: '팔 뻗기를 수행할 수 없음' };
 }
