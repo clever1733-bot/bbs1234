@@ -187,7 +187,7 @@ export function analyzeArmReach(landmarks) {
       rAnkle.x - initialState.ankles.rx,
       rAnkle.y - initialState.ankles.ry
     );
-    feetMoved = lDist > 0.05 || rDist > 0.05;
+    feetMoved = lDist > 0.08 || rDist > 0.08;
     if (feetMoved) feetEverMoved = true;
   }
 

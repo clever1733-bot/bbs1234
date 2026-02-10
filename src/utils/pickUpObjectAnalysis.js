@@ -232,7 +232,7 @@ export function calculatePickUpScore(minDist, reachedFloor, feetEverMoved, lostB
   if (reachedFloor && feetEverMoved) {
     return { score: 3, reason: '물건을 집었으나 감독이 필요함' };
   }
-  if (minDist <= 5 && !feetEverMoved) {
+  if (minDist <= 5) {
     return { score: 2, reason: `바닥까지 ${minDist.toFixed(1)}cm — 바닥 미도달, 균형 유지` };
   }
   if (minDist > 0) {

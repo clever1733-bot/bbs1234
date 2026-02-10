@@ -150,8 +150,9 @@ export function analyzeSingleLegStance(landmarks) {
         dropStartedAt = now;
       } else if (now - dropStartedAt >= CONFIG.DROP_GRACE_MS) {
         // 유예 시간 초과 → 실제로 발을 내렸다고 판정
+        // dropStartedAt 시점을 종료 시점으로 사용 (유예 기간 동안의 부풀림 방지)
         if (liftStartTime) {
-          const elapsed = (now - liftStartTime) / 1000;
+          const elapsed = (dropStartedAt - liftStartTime) / 1000;
           if (elapsed > maxDuration) {
             maxDuration = Math.round(elapsed * 10) / 10;
             bestLiftedFoot = liftedFoot;
@@ -161,13 +162,14 @@ export function analyzeSingleLegStance(landmarks) {
         liftStartTime = null;
         dropStartedAt = null;
       }
-      // 유예 중에는 liftedFoot 유지 (타이머 계속 진행)
+      // 유예 중에는 liftedFoot 유지 (노이즈일 수 있으므로)
     }
   }
 
-  // 현재 유지 시간
+  // 현재 유지 시간 (grace period 중에는 dropStartedAt 시점으로 동결)
   if (liftedFoot !== null && liftStartTime) {
-    liftDuration = Math.round(((now - liftStartTime) / 1000) * 10) / 10;
+    const effectiveNow = dropStartedAt || now;
+    liftDuration = Math.round(((effectiveNow - liftStartTime) / 1000) * 10) / 10;
     if (liftDuration > maxDuration) {
       maxDuration = liftDuration;
       bestLiftedFoot = liftedFoot;

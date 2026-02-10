@@ -350,7 +350,7 @@ export function markTurn360Complete() {
  * - 1점: 한쪽만 완료 또는 감독 필요
  * - 0점: 360° 미완료
  */
-export function calculateTurn360Score(first, second, feetMoved) {
+export function calculateTurn360Score(first, second) {
   const firstDone = first && first.completed;
   const secondDone = second && second.completed;
 
@@ -366,21 +366,15 @@ export function calculateTurn360Score(first, second, feetMoved) {
   const firstFast = first.elapsedSec <= CONFIG.FAST_TURN_SEC;
   const secondFast = second.elapsedSec <= CONFIG.FAST_TURN_SEC;
 
-  if (firstFast && secondFast && !feetMoved) {
+  // 360° 회전에서 발 이동은 필수적이므로 feetMoved는 채점에 반영하지 않음
+  if (firstFast && secondFast) {
     return {
       score: 4,
       reason: `양방향 4초 이내 안전 완료 (${first.elapsedSec}초 / ${second.elapsedSec}초)`
     };
   }
 
-  if (firstFast && secondFast) {
-    return {
-      score: 3,
-      reason: `양방향 4초 이내 완료, 발 움직임 감지 (${first.elapsedSec}초 / ${second.elapsedSec}초)`
-    };
-  }
-
-  if ((firstFast || secondFast) && !feetMoved) {
+  if (firstFast || secondFast) {
     return {
       score: 3,
       reason: `한 방향 4초 이내 완료 (${first.elapsedSec}초 / ${second.elapsedSec}초)`

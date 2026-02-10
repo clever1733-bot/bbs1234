@@ -22,6 +22,7 @@ let lostBalance = false;
 let feetXGap = 0;                // 발 X 간격 (어깨 폭 대비 비율)
 let feetYGap = 0;                // 발 Y 간격 (앞뒤 거리)
 let stanceConfirmedAt = null;    // 자세 확인 시점 (디바운스)
+let stanceLostAt = null;         // 자세 이탈 시작 시점 (유예용)
 
 // ── 설정 (관대하게) ──
 const CONFIG = {
@@ -93,6 +94,7 @@ export function resetTandemStanceAnalysis() {
   feetXGap = 0;
   feetYGap = 0;
   stanceConfirmedAt = null;
+  stanceLostAt = null;
 }
 
 export function recordTandemStanceInitial(landmarks) {
@@ -114,6 +116,7 @@ export function recordTandemStanceInitial(landmarks) {
   feetXGap = 0;
   feetYGap = 0;
   stanceConfirmedAt = null;
+  stanceLostAt = null;
 
   return true;
 }
@@ -156,6 +159,9 @@ export function analyzeTandemStance(landmarks) {
 
   // 자세 전이 처리 (디바운스)
   if (detectedStance !== 'none') {
+    // 자세 감지됨 — 이탈 유예 초기화
+    stanceLostAt = null;
+
     if (stanceType === 'none') {
       // 자세 진입
       if (!stanceConfirmedAt) {
@@ -173,24 +179,31 @@ export function analyzeTandemStance(landmarks) {
       stanceConfirmedAt = null;
     }
   } else {
-    // 자세 이탈
+    // 자세 미감지 — grace period 적용
     stanceConfirmedAt = null;
+
     if (stanceType !== 'none' && stanceStartTime) {
-      // 0.5초 유예 후 이탈 확정
-      const elapsed = (now - stanceStartTime) / 1000;
-      if (elapsed > CONFIG.STANCE_LOST_MS / 1000) {
-        // 이전 기록 저장
+      if (!stanceLostAt) {
+        stanceLostAt = now;
+      } else if (now - stanceLostAt >= CONFIG.STANCE_LOST_MS) {
+        // 유예 시간 초과 → 실제 이탈 확정
+        // stanceLostAt 시점을 종료 시점으로 사용 (부풀림 방지)
+        const elapsed = (stanceLostAt - stanceStartTime) / 1000;
         if (elapsed > maxDuration) {
           maxDuration = Math.round(elapsed * 10) / 10;
         }
+        stanceType = 'none';
+        stanceStartTime = null;
+        stanceLostAt = null;
       }
-      // 바로 이탈 처리하지 않고 잠시 허용
+      // 유예 중에는 stanceType 유지 (노이즈일 수 있으므로)
     }
   }
 
-  // 유지 시간 계산
+  // 유지 시간 계산 (grace period 중에는 stanceLostAt 시점으로 동결)
   if (stanceType !== 'none' && stanceStartTime) {
-    stanceDuration = Math.round(((now - stanceStartTime) / 1000) * 10) / 10;
+    const effectiveNow = stanceLostAt || now;
+    stanceDuration = Math.round(((effectiveNow - stanceStartTime) / 1000) * 10) / 10;
     if (stanceDuration > maxDuration) {
       maxDuration = stanceDuration;
     }

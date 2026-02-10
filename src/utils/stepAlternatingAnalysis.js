@@ -246,16 +246,20 @@ export function calculateStepAlternatingScore(touchCount, altCount, elapsedSec, 
     return { score: 0, reason: `터치 ${touchCount}회 — 도움 필요 또는 안전 불가` };
   }
 
-  if (touchCount >= 8 && elapsedSec <= 20) {
-    return { score: 4, reason: `${touchCount}회 터치, ${elapsedSec}초 — 독립적으로 안전하게 완수` };
+  // 임상 BBS: "교대로" 발을 올려야 하므로 최소 교대 횟수 필요 (관대: 3회 이상)
+  const hasAlternation = altCount >= 3;
+
+  if (touchCount >= 8 && hasAlternation && elapsedSec <= 20) {
+    return { score: 4, reason: `${touchCount}회 터치(교대 ${altCount}회), ${elapsedSec}초 — 독립적으로 안전하게 완수` };
   }
 
-  if (touchCount >= 8) {
-    return { score: 3, reason: `${touchCount}회 터치, ${elapsedSec}초 — 완수했지만 느림` };
+  if (touchCount >= 8 && hasAlternation) {
+    return { score: 3, reason: `${touchCount}회 터치(교대 ${altCount}회), ${elapsedSec}초 — 완수했지만 느림` };
   }
 
+  // 8회 이상이지만 교대 부족 → 2점으로 하향
   if (touchCount >= 4) {
-    return { score: 2, reason: `${touchCount}회 터치 — 감독하에 4회 완수` };
+    return { score: 2, reason: `${touchCount}회 터치(교대 ${altCount}회) — 감독하에 완수` };
   }
 
   return { score: 1, reason: `${touchCount}회 터치 — 최소한의 도움으로 완수` };

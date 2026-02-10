@@ -1104,9 +1104,8 @@ function BBSTestPage() {
           markTurn360Complete();
           secondTurnResult = harvestCurrentTurnResult();
           newFlow = 'complete';
-          const totalFeetMoved = firstTurnResult?.feetMoved || secondTurnResult.feetMoved;
-          autoScore = calculateTurn360Score(firstTurnResult, secondTurnResult, totalFeetMoved);
-          assessmentReport = generateTurn360Report(autoScore, firstTurnResult, secondTurnResult, totalFeetMoved);
+          autoScore = calculateTurn360Score(firstTurnResult, secondTurnResult);
+          assessmentReport = generateTurn360Report(autoScore, firstTurnResult, secondTurnResult, false);
           showResultModal = true;
           newFeedback = { message: `측정 완료!`, type: 'success' };
         }
@@ -2515,8 +2514,8 @@ function BBSTestPage() {
         setTurn360State(prev => {
           if (prev.showResultModal || prev.testFlow === 'complete') return prev;
           markTurn360Complete();
-          const scoreResult = calculateTurn360Score(prev.firstTurnResult, prev.secondTurnResult, prev.feetEverMoved);
-          const report = generateTurn360Report(scoreResult, prev.firstTurnResult, prev.secondTurnResult, prev.feetEverMoved);
+          const scoreResult = calculateTurn360Score(prev.firstTurnResult, prev.secondTurnResult);
+          const report = generateTurn360Report(scoreResult, prev.firstTurnResult, prev.secondTurnResult, false);
           return { ...prev, testFlow: 'complete', autoScore: scoreResult, assessmentReport: report, showResultModal: true, feedback: { message: '영상 분석 완료', type: 'success' } };
         });
       }
@@ -5100,9 +5099,8 @@ function BBSTestPage() {
                     // 현재까지 결과로 수동 완료
                     const first = turn360State.firstTurnResult || harvestCurrentTurnResult();
                     const second = turn360State.secondTurnResult;
-                    const totalFeetMoved = first?.feetMoved || second?.feetMoved || false;
-                    const score = calculateTurn360Score(first, second, totalFeetMoved);
-                    const report = generateTurn360Report(score, first, second, totalFeetMoved);
+                    const score = calculateTurn360Score(first, second);
+                    const report = generateTurn360Report(score, first, second, false);
                     markTurn360Complete();
                     setTurn360State(prev => ({
                       ...prev,
