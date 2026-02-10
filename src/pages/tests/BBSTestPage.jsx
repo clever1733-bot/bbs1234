@@ -84,6 +84,10 @@ import {
   resetSingleLegStanceAnalysis
 } from '../../utils/singleLegStanceAnalysis';
 import { calibrate, resetCalibration } from '../../utils/bodyCalibration';
+import {
+  initHandsDetection, sendFrameToHands, checkTherapistHands,
+  applyTherapistScoreCap, resetHandDetection, destroyHandsDetection
+} from '../../utils/therapistHandDetection';
 import { BBS_ITEMS } from '../../constants';
 import { useNavigation, PAGES } from '../../context/NavigationContext';
 import { useTestHistory } from '../../context/TestHistoryContext';
@@ -243,6 +247,9 @@ function BBSTestPage() {
   const startTimeRef = useRef(null);
   const calibratedRef = useRef(false);
   const patientHeightRef = useRef('');
+  const handsInitializedRef = useRef(false);
+  const therapistIntervenedRef = useRef(Array(14).fill(false));
+  const [therapistDetected, setTherapistDetected] = useState(false);
 
   const { navigateTo } = useNavigation();
   const { addTestResult } = useTestHistory();
@@ -257,6 +264,7 @@ function BBSTestPage() {
   const isItem12 = currentItem === 11;
   const isItem13 = currentItem === 12;
   const isItem14 = currentItem === 13;
+  const needsHandDetection = [7, 8, 9, 10, 11, 12, 13].includes(currentItem);
 
   // 항목 8 전용 상태 - 팔 뻗어 앞으로 내밀기
   const [armReachState, setArmReachState] = useState({
@@ -706,15 +714,14 @@ function BBSTestPage() {
       let assessmentReport = prev.assessmentReport;
       let showResultModal = prev.showResultModal;
 
-      // 단계 1: 서서 팔 90도 들기 대기
+      // 단계 1: 서있기 확인 후 바로 측정 시작
       if (prev.testPhase === 'waiting') {
-        if (analysis.isStanding && analysis.armRaised) {
+        if (analysis.isStanding) {
           if (!readyConfirmedAt) {
             readyConfirmedAt = now;
-            newFeedback = { message: '팔 감지됨... 자세를 유지하세요', type: 'info' };
-          } else if (now - readyConfirmedAt > 1500) {
-            // 1.5초 유지 → 초기 위치 기록 후 측정 시작
-            // 실제 영상 aspect ratio 전달
+            newFeedback = { message: '서있기 감지... 잠시 대기', type: 'info' };
+          } else if (now - readyConfirmedAt > 500) {
+            // 0.5초 서있기 확인 → 초기 위치 기록 후 측정 시작
             const video = videoRef.current;
             const ar = (video && video.videoWidth && video.videoHeight)
               ? video.videoWidth / video.videoHeight
@@ -725,11 +732,7 @@ function BBSTestPage() {
           }
         } else {
           readyConfirmedAt = null;
-          if (!analysis.isStanding) {
-            newFeedback = { message: '서 있는 자세를 취해주세요', type: 'info' };
-          } else {
-            newFeedback = { message: '팔을 앞으로 90도 뻗어주세요', type: 'info' };
-          }
+          newFeedback = { message: '서 있는 자세를 취해주세요', type: 'info' };
         }
       }
 
@@ -748,6 +751,9 @@ function BBSTestPage() {
           markArmReachComplete();
           newPhase = 'complete';
           autoScore = calculateArmReachScore(analysis.maxReachCm, analysis.feetEverMoved, false);
+          if (therapistIntervenedRef.current[7]) {
+            autoScore = applyTherapistScoreCap(autoScore, 7, {});
+          }
           assessmentReport = generateArmReachReport(autoScore, analysis.maxReachCm, analysis.feetEverMoved);
           showResultModal = true;
           newFeedback = { message: `측정 완료! 최대 ${analysis.maxReachCm}cm`, type: 'success' };
@@ -843,6 +849,9 @@ function BBSTestPage() {
           const minDist = analysis.minWristToAnkleCm;
           const reached = minDist <= 0; // 음수이면 바닥 아래 도달
           autoScore = calculatePickUpScore(Math.max(0, minDist), reached, analysis.feetEverMoved, false);
+          if (therapistIntervenedRef.current[8]) {
+            autoScore = applyTherapistScoreCap(autoScore, 8, {});
+          }
           assessmentReport = generatePickUpReport(autoScore, Math.max(0, minDist), reached, analysis.feetEverMoved);
           showResultModal = true;
           newFeedback = { message: `측정 완료! ${reached ? '바닥 도달 성공' : `바닥까지 ${minDist}cm`}`, type: 'success' };
@@ -936,6 +945,9 @@ function BBSTestPage() {
             analysis.leftWeightShift, analysis.rightWeightShift,
             analysis.feetEverMoved, false
           );
+          if (therapistIntervenedRef.current[9]) {
+            autoScore = applyTherapistScoreCap(autoScore, 9, {});
+          }
           assessmentReport = generateLookBehindReport(
             autoScore,
             analysis.leftMaxRotation, analysis.rightMaxRotation,
@@ -1105,6 +1117,9 @@ function BBSTestPage() {
           secondTurnResult = harvestCurrentTurnResult();
           newFlow = 'complete';
           autoScore = calculateTurn360Score(firstTurnResult, secondTurnResult);
+          if (therapistIntervenedRef.current[10]) {
+            autoScore = applyTherapistScoreCap(autoScore, 10, {});
+          }
           assessmentReport = generateTurn360Report(autoScore, firstTurnResult, secondTurnResult, false);
           showResultModal = true;
           newFeedback = { message: `측정 완료!`, type: 'success' };
@@ -1203,6 +1218,9 @@ function BBSTestPage() {
           autoScore = calculateStepAlternatingScore(
             analysis.stepCount, analysis.alternatingCount, analysis.elapsedSec, false
           );
+          if (therapistIntervenedRef.current[11]) {
+            autoScore = applyTherapistScoreCap(autoScore, 11, { stepCount: analysis.stepCount });
+          }
           assessmentReport = generateStepAlternatingReport(
             autoScore, analysis.stepCount, analysis.alternatingCount, analysis.elapsedSec
           );
@@ -1217,6 +1235,9 @@ function BBSTestPage() {
           autoScore = calculateStepAlternatingScore(
             analysis.stepCount, analysis.alternatingCount, analysis.elapsedSec, false
           );
+          if (therapistIntervenedRef.current[11]) {
+            autoScore = applyTherapistScoreCap(autoScore, 11, { stepCount: analysis.stepCount });
+          }
           assessmentReport = generateStepAlternatingReport(
             autoScore, analysis.stepCount, analysis.alternatingCount, analysis.elapsedSec
           );
@@ -1312,6 +1333,9 @@ function BBSTestPage() {
           autoScore = calculateTandemStanceScore(
             analysis.bestStanceType, analysis.maxDuration, false
           );
+          if (therapistIntervenedRef.current[12]) {
+            autoScore = applyTherapistScoreCap(autoScore, 12, { holdDuration: analysis.maxDuration });
+          }
           assessmentReport = generateTandemStanceReport(
             autoScore, analysis.bestStanceType, analysis.maxDuration, analysis.feetXGap
           );
@@ -1405,6 +1429,9 @@ function BBSTestPage() {
           newPhase = 'complete';
           markSingleLegStanceComplete();
           autoScore = calculateSingleLegStanceScore(analysis.maxDuration, true, false);
+          if (therapistIntervenedRef.current[13]) {
+            autoScore = applyTherapistScoreCap(autoScore, 13, {});
+          }
           assessmentReport = generateSingleLegStanceReport(
             autoScore, analysis.maxDuration, analysis.bestLiftedFoot
           );
@@ -1564,6 +1591,16 @@ function BBSTestPage() {
         minTrackingConfidence: 0.6
       });
 
+      // 치료사 손 감지용 Hands 초기화 (해당 항목만)
+      if (needsHandDetection && !handsInitializedRef.current) {
+        try {
+          await initHandsDetection();
+          handsInitializedRef.current = true;
+        } catch (err) {
+          console.warn('Hands 초기화 실패 (Pose만으로 동작):', err);
+        }
+      }
+
       pose.onResults((results) => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -1695,6 +1732,26 @@ function BBSTestPage() {
             fillStyle: skeletonColor,
             radius: 5
           });
+
+          // 치료사 손 감지 체크
+          if (needsHandDetection) {
+            const handCheck = checkTherapistHands(results.poseLandmarks);
+            if (handCheck.detected && !therapistIntervenedRef.current[currentItem]) {
+              therapistIntervenedRef.current[currentItem] = true;
+              setTherapistDetected(true);
+            }
+            // 캔버스에 빨간 경고 표시
+            if (handCheck.detected || therapistIntervenedRef.current[currentItem]) {
+              ctx.fillStyle = 'rgba(239, 68, 68, 0.7)';
+              ctx.beginPath();
+              ctx.roundRect(canvas.width / 2 - 80, canvas.height - 40, 160, 30, 6);
+              ctx.fill();
+              ctx.fillStyle = '#FFFFFF';
+              ctx.font = 'bold 13px Arial';
+              ctx.textAlign = 'center';
+              ctx.fillText('치료사 개입 감지', canvas.width / 2, canvas.height - 20);
+            }
+          }
         } else if (isItem11) {
           // 항목 11 전용: 포즈 소실 시에도 분석 호출 (뒷면 통과 추론)
           handleItem11Analysis(null, false);
@@ -1735,6 +1792,10 @@ function BBSTestPage() {
               await poseRef.current.send({ image: video });
             } catch {
               // 프레임 전송 오류 무시
+            }
+            // 치료사 손 감지용 프레임 전송
+            if (needsHandDetection) {
+              await sendFrameToHands(video);
             }
           }
           // 영상 진행률 업데이트
@@ -1783,6 +1844,9 @@ function BBSTestPage() {
         const processFrame = async () => {
           if (poseRef.current && video.readyState >= 2) {
             try { await poseRef.current.send({ image: video }); } catch { /* ignore */ }
+            if (needsHandDetection) {
+              await sendFrameToHands(video);
+            }
           }
           animationFrameRef.current = requestAnimationFrame(processFrame);
         };
@@ -1802,6 +1866,11 @@ function BBSTestPage() {
 
   // 항목 시작
   const startItem = async () => {
+    // 치료사 감지 리셋
+    therapistIntervenedRef.current[currentItem] = false;
+    setTherapistDetected(false);
+    resetHandDetection();
+
     setIsAnalyzing(true);
     setItemTimer(0);
     setVideoProgress(0);
@@ -1892,7 +1961,7 @@ function BBSTestPage() {
         feetEverMoved: false,
         viewAngle: null,
         readyConfirmedAt: null,
-        feedback: { message: '서서 팔을 앞으로 90도 뻗어주세요', type: 'info' },
+        feedback: { message: '바르게 서 주세요', type: 'info' },
         autoScore: null,
         assessmentReport: null,
         showResultModal: false
@@ -2146,6 +2215,8 @@ function BBSTestPage() {
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
+      // 치료사 손 감지 해제
+      destroyHandsDetection();
     };
   }, []);
 
@@ -2240,10 +2311,10 @@ function BBSTestPage() {
 
       switch (phase) {
         case 'waiting':
-          speak('서서 팔을 앞으로 90도 뻗어주세요', 1.0);
+          speak('바르게 서 주세요', 1.0);
           break;
         case 'reaching':
-          speak('측정 시작. 최대한 앞으로 뻗으세요. 발은 제자리에 두세요.', 1.0);
+          speak('측정 시작. 최대한 앞으로 뻗으세요.', 1.0);
           break;
         case 'complete':
           speak(`측정 완료. ${armReachState.autoScore?.score || 0}점. 최대 ${armReachState.maxReachCm}센티미터.`, 0.9);
@@ -2485,7 +2556,10 @@ function BBSTestPage() {
         setArmReachState(prev => {
           if (prev.showResultModal || prev.testPhase === 'complete') return prev;
           markArmReachComplete();
-          const scoreResult = calculateArmReachScore(prev.maxReachCm, prev.feetEverMoved, false);
+          let scoreResult = calculateArmReachScore(prev.maxReachCm, prev.feetEverMoved, false);
+          if (therapistIntervenedRef.current[7]) {
+            scoreResult = applyTherapistScoreCap(scoreResult, 7, {});
+          }
           const report = generateArmReachReport(scoreResult, prev.maxReachCm, prev.feetEverMoved);
           return { ...prev, testPhase: 'complete', autoScore: scoreResult, assessmentReport: report, showResultModal: true, feedback: { message: `영상 분석 완료! 최대 ${prev.maxReachCm}cm`, type: 'success' } };
         });
@@ -2496,7 +2570,10 @@ function BBSTestPage() {
           markPickUpComplete();
           const minDist = prev.minWristToAnkleCm >= 999 ? 0 : Math.max(0, prev.minWristToAnkleCm);
           const reached = prev.reachedFloor;
-          const scoreResult = calculatePickUpScore(minDist, reached, prev.feetEverMoved, false);
+          let scoreResult = calculatePickUpScore(minDist, reached, prev.feetEverMoved, false);
+          if (therapistIntervenedRef.current[8]) {
+            scoreResult = applyTherapistScoreCap(scoreResult, 8, {});
+          }
           const report = generatePickUpReport(scoreResult, minDist, reached, prev.feetEverMoved);
           return { ...prev, testPhase: 'complete', autoScore: scoreResult, assessmentReport: report, showResultModal: true, feedback: { message: '영상 분석 완료', type: 'success' } };
         });
@@ -2505,7 +2582,10 @@ function BBSTestPage() {
         setLookBehindState(prev => {
           if (prev.showResultModal || prev.testPhase === 'complete') return prev;
           markLookBehindComplete();
-          const scoreResult = calculateLookBehindScore(prev.leftMaxRotation, prev.rightMaxRotation, prev.leftWeightShift, prev.rightWeightShift, prev.feetEverMoved, false);
+          let scoreResult = calculateLookBehindScore(prev.leftMaxRotation, prev.rightMaxRotation, prev.leftWeightShift, prev.rightWeightShift, prev.feetEverMoved, false);
+          if (therapistIntervenedRef.current[9]) {
+            scoreResult = applyTherapistScoreCap(scoreResult, 9, {});
+          }
           const report = generateLookBehindReport(scoreResult, prev.leftMaxRotation, prev.rightMaxRotation, prev.leftWeightShift, prev.rightWeightShift, prev.feetEverMoved);
           return { ...prev, testPhase: 'complete', autoScore: scoreResult, assessmentReport: report, showResultModal: true, feedback: { message: '영상 분석 완료', type: 'success' } };
         });
@@ -2514,7 +2594,10 @@ function BBSTestPage() {
         setTurn360State(prev => {
           if (prev.showResultModal || prev.testFlow === 'complete') return prev;
           markTurn360Complete();
-          const scoreResult = calculateTurn360Score(prev.firstTurnResult, prev.secondTurnResult);
+          let scoreResult = calculateTurn360Score(prev.firstTurnResult, prev.secondTurnResult);
+          if (therapistIntervenedRef.current[10]) {
+            scoreResult = applyTherapistScoreCap(scoreResult, 10, {});
+          }
           const report = generateTurn360Report(scoreResult, prev.firstTurnResult, prev.secondTurnResult, false);
           return { ...prev, testFlow: 'complete', autoScore: scoreResult, assessmentReport: report, showResultModal: true, feedback: { message: '영상 분석 완료', type: 'success' } };
         });
@@ -2523,9 +2606,12 @@ function BBSTestPage() {
         setStepAlternatingState(prev => {
           if (prev.showResultModal || prev.testPhase === 'complete') return prev;
           markStepAlternatingComplete();
-          const scoreResult = calculateStepAlternatingScore(
+          let scoreResult = calculateStepAlternatingScore(
             prev.stepCount, prev.alternatingCount, prev.elapsedSec, false
           );
+          if (therapistIntervenedRef.current[11]) {
+            scoreResult = applyTherapistScoreCap(scoreResult, 11, { stepCount: prev.stepCount });
+          }
           const report = generateStepAlternatingReport(
             scoreResult, prev.stepCount, prev.alternatingCount, prev.elapsedSec
           );
@@ -2536,9 +2622,12 @@ function BBSTestPage() {
         setTandemStanceState(prev => {
           if (prev.showResultModal || prev.testPhase === 'complete') return prev;
           markTandemStanceComplete();
-          const scoreResult = calculateTandemStanceScore(
+          let scoreResult = calculateTandemStanceScore(
             prev.bestStanceType, prev.maxDuration, false
           );
+          if (therapistIntervenedRef.current[12]) {
+            scoreResult = applyTherapistScoreCap(scoreResult, 12, { holdDuration: prev.maxDuration });
+          }
           const report = generateTandemStanceReport(
             scoreResult, prev.bestStanceType, prev.maxDuration, prev.feetXGap
           );
@@ -2550,7 +2639,10 @@ function BBSTestPage() {
           if (prev.showResultModal || prev.testPhase === 'complete') return prev;
           markSingleLegStanceComplete();
           const attempted = prev.maxDuration > 0;
-          const scoreResult = calculateSingleLegStanceScore(prev.maxDuration, attempted, false);
+          let scoreResult = calculateSingleLegStanceScore(prev.maxDuration, attempted, false);
+          if (therapistIntervenedRef.current[13]) {
+            scoreResult = applyTherapistScoreCap(scoreResult, 13, {});
+          }
           const report = generateSingleLegStanceReport(
             scoreResult, prev.maxDuration, prev.bestLiftedFoot
           );
@@ -3694,16 +3786,15 @@ function BBSTestPage() {
                   {/* 상단 좌측: 팔 상태 */}
                   <div className="absolute top-4 left-4 space-y-2">
                     <div className={`px-4 py-2 rounded-xl backdrop-blur-sm shadow-lg ${
-                      armReachState.armRaised ? 'bg-emerald-500' : 'bg-slate-600'
+                      armReachState.isStanding ? 'bg-emerald-500' : 'bg-slate-600'
                     }`}>
                       <p className="text-white font-bold text-lg">
-                        {armReachState.armRaised ? '팔 90도 OK' : '팔 들기 대기'}
+                        {armReachState.isStanding ? '서있기 OK' : '서기 대기'}
                       </p>
                     </div>
                     <div className="bg-slate-900/80 backdrop-blur-sm px-3 py-2 rounded-lg">
-                      <p className="text-slate-400 text-xs">어깨 {armReachState.shoulderAngle}° / 팔꿈치 {armReachState.elbowAngle}°</p>
                       {armReachState.viewAngle && (
-                        <p className={`text-xs mt-1 ${armReachState.viewAngle === 'side' ? 'text-emerald-400' : 'text-yellow-400'}`}>
+                        <p className={`text-xs ${armReachState.viewAngle === 'side' ? 'text-emerald-400' : 'text-yellow-400'}`}>
                           {armReachState.viewAngle === 'side' ? '측면 촬영 (정확도 높음)' : '정면 촬영 (측면 권장)'}
                         </p>
                       )}
@@ -3776,7 +3867,7 @@ function BBSTestPage() {
                     <div className="mt-4 flex items-center justify-center gap-2">
                       <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse" />
                       <span className="text-blue-400 text-sm">
-                        {armReachState.isStanding ? (armReachState.armRaised ? '자세 확인 중...' : '팔을 앞으로 뻗어주세요') : '서 있는 자세를 취해주세요'}
+                        {armReachState.isStanding ? '서있기 확인 중...' : '서 있는 자세를 취해주세요'}
                       </span>
                     </div>
                   </div>
@@ -3803,7 +3894,10 @@ function BBSTestPage() {
                           size="sm"
                           onClick={() => {
                             markArmReachComplete();
-                            const score = calculateArmReachScore(armReachState.maxReachCm, armReachState.feetEverMoved, false);
+                            let score = calculateArmReachScore(armReachState.maxReachCm, armReachState.feetEverMoved, false);
+                            if (therapistIntervenedRef.current[7]) {
+                              score = applyTherapistScoreCap(score, 7, {});
+                            }
                             const report = generateArmReachReport(score, armReachState.maxReachCm, armReachState.feetEverMoved);
                             setArmReachState(prev => ({
                               ...prev,
@@ -3896,6 +3990,11 @@ function BBSTestPage() {
                 </div>
                 <h2 className="text-white font-bold text-2xl mb-2">항목 8 검사 완료</h2>
                 <p className="text-slate-400">팔 뻗어 앞으로 내밀기</p>
+                {therapistIntervenedRef.current[7] && (
+                  <div className="bg-red-500/20 border border-red-500/40 rounded-lg px-3 py-2 mt-2">
+                    <p className="text-red-400 text-sm">치료사 개입 감지 — 점수가 제한되었습니다</p>
+                  </div>
+                )}
               </div>
 
               {/* 점수 */}
@@ -4210,7 +4309,10 @@ function BBSTestPage() {
                             markPickUpComplete();
                             const minDist = pickUpState.minWristToAnkleCm;
                             const reached = minDist <= 0;
-                            const score = calculatePickUpScore(Math.max(0, minDist), reached, pickUpState.feetEverMoved, false);
+                            let score = calculatePickUpScore(Math.max(0, minDist), reached, pickUpState.feetEverMoved, false);
+                            if (therapistIntervenedRef.current[8]) {
+                              score = applyTherapistScoreCap(score, 8, {});
+                            }
                             const report = generatePickUpReport(score, Math.max(0, minDist), reached, pickUpState.feetEverMoved);
                             setPickUpState(prev => ({
                               ...prev,
@@ -4303,6 +4405,11 @@ function BBSTestPage() {
                 </div>
                 <h2 className="text-white font-bold text-2xl mb-2">항목 9 검사 완료</h2>
                 <p className="text-slate-400">바닥의 물건 집기</p>
+                {therapistIntervenedRef.current[8] && (
+                  <div className="bg-red-500/20 border border-red-500/40 rounded-lg px-3 py-2 mt-2">
+                    <p className="text-red-400 text-sm">치료사 개입 감지 — 점수가 제한되었습니다</p>
+                  </div>
+                )}
               </div>
 
               {/* 점수 */}
@@ -4697,11 +4804,14 @@ function BBSTestPage() {
                           size="sm"
                           onClick={() => {
                             markLookBehindComplete();
-                            const score = calculateLookBehindScore(
+                            let score = calculateLookBehindScore(
                               lookBehindState.leftMaxRotation, lookBehindState.rightMaxRotation,
                               lookBehindState.leftWeightShift, lookBehindState.rightWeightShift,
                               lookBehindState.feetEverMoved, false
                             );
+                            if (therapistIntervenedRef.current[9]) {
+                              score = applyTherapistScoreCap(score, 9, {});
+                            }
                             const report = generateLookBehindReport(
                               score,
                               lookBehindState.leftMaxRotation, lookBehindState.rightMaxRotation,
@@ -4799,6 +4909,11 @@ function BBSTestPage() {
                 </div>
                 <h2 className="text-white font-bold text-2xl mb-2">항목 10 검사 완료</h2>
                 <p className="text-slate-400">뒤돌아보기</p>
+                {therapistIntervenedRef.current[9] && (
+                  <div className="bg-red-500/20 border border-red-500/40 rounded-lg px-3 py-2 mt-2">
+                    <p className="text-red-400 text-sm">치료사 개입 감지 — 점수가 제한되었습니다</p>
+                  </div>
+                )}
               </div>
 
               {/* 점수 */}
@@ -5099,7 +5214,10 @@ function BBSTestPage() {
                     // 현재까지 결과로 수동 완료
                     const first = turn360State.firstTurnResult || harvestCurrentTurnResult();
                     const second = turn360State.secondTurnResult;
-                    const score = calculateTurn360Score(first, second);
+                    let score = calculateTurn360Score(first, second);
+                    if (therapistIntervenedRef.current[10]) {
+                      score = applyTherapistScoreCap(score, 10, {});
+                    }
                     const report = generateTurn360Report(score, first, second, false);
                     markTurn360Complete();
                     setTurn360State(prev => ({
@@ -5185,6 +5303,11 @@ function BBSTestPage() {
                 </div>
                 <h2 className="text-white font-bold text-2xl mb-2">항목 11 검사 완료</h2>
                 <p className="text-slate-400">360도 회전</p>
+                {therapistIntervenedRef.current[10] && (
+                  <div className="bg-red-500/20 border border-red-500/40 rounded-lg px-3 py-2 mt-2">
+                    <p className="text-red-400 text-sm">치료사 개입 감지 — 점수가 제한되었습니다</p>
+                  </div>
+                )}
               </div>
 
               <div className="p-6 border-b border-slate-700">
@@ -5482,9 +5605,12 @@ function BBSTestPage() {
                   className="text-slate-400"
                   onClick={() => {
                     markStepAlternatingComplete();
-                    const score = calculateStepAlternatingScore(
+                    let score = calculateStepAlternatingScore(
                       stepAlternatingState.stepCount, stepAlternatingState.alternatingCount, stepAlternatingState.elapsedSec, false
                     );
+                    if (therapistIntervenedRef.current[11]) {
+                      score = applyTherapistScoreCap(score, 11, { stepCount: stepAlternatingState.stepCount });
+                    }
                     const report = generateStepAlternatingReport(
                       score, stepAlternatingState.stepCount, stepAlternatingState.alternatingCount, stepAlternatingState.elapsedSec
                     );
@@ -5569,6 +5695,11 @@ function BBSTestPage() {
                 </div>
                 <h2 className="text-white font-bold text-2xl mb-2">항목 12 검사 완료</h2>
                 <p className="text-slate-400">발판에 발 교대로 올리기</p>
+                {therapistIntervenedRef.current[11] && (
+                  <div className="bg-red-500/20 border border-red-500/40 rounded-lg px-3 py-2 mt-2">
+                    <p className="text-red-400 text-sm">치료사 개입 감지 — 점수가 제한되었습니다</p>
+                  </div>
+                )}
               </div>
 
               <div className="p-6 border-b border-slate-700">
@@ -5849,9 +5980,12 @@ function BBSTestPage() {
                   className="text-slate-400"
                   onClick={() => {
                     markTandemStanceComplete();
-                    const score = calculateTandemStanceScore(
+                    let score = calculateTandemStanceScore(
                       tandemStanceState.bestStanceType, tandemStanceState.maxDuration, false
                     );
+                    if (therapistIntervenedRef.current[12]) {
+                      score = applyTherapistScoreCap(score, 12, { holdDuration: tandemStanceState.maxDuration });
+                    }
                     const report = generateTandemStanceReport(
                       score, tandemStanceState.bestStanceType, tandemStanceState.maxDuration, tandemStanceState.feetXGap
                     );
@@ -5936,6 +6070,11 @@ function BBSTestPage() {
                 </div>
                 <h2 className="text-white font-bold text-2xl mb-2">항목 13 검사 완료</h2>
                 <p className="text-slate-400">일렬로 서기 (탄뎀 서기)</p>
+                {therapistIntervenedRef.current[12] && (
+                  <div className="bg-red-500/20 border border-red-500/40 rounded-lg px-3 py-2 mt-2">
+                    <p className="text-red-400 text-sm">치료사 개입 감지 — 점수가 제한되었습니다</p>
+                  </div>
+                )}
               </div>
 
               <div className="p-6 border-b border-slate-700">
@@ -6205,7 +6344,10 @@ function BBSTestPage() {
                   onClick={() => {
                     markSingleLegStanceComplete();
                     const attempted = singleLegState.maxDuration > 0;
-                    const score = calculateSingleLegStanceScore(singleLegState.maxDuration, attempted, false);
+                    let score = calculateSingleLegStanceScore(singleLegState.maxDuration, attempted, false);
+                    if (therapistIntervenedRef.current[13]) {
+                      score = applyTherapistScoreCap(score, 13, {});
+                    }
                     const report = generateSingleLegStanceReport(
                       score, singleLegState.maxDuration, singleLegState.bestLiftedFoot
                     );
@@ -6290,6 +6432,11 @@ function BBSTestPage() {
                 </div>
                 <h2 className="text-white font-bold text-2xl mb-2">항목 14 검사 완료</h2>
                 <p className="text-slate-400">한 발로 서기 (마지막 항목)</p>
+                {therapistIntervenedRef.current[13] && (
+                  <div className="bg-red-500/20 border border-red-500/40 rounded-lg px-3 py-2 mt-2">
+                    <p className="text-red-400 text-sm">치료사 개입 감지 — 점수가 제한되었습니다</p>
+                  </div>
+                )}
               </div>
 
               <div className="p-6 border-b border-slate-700">
