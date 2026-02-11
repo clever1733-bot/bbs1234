@@ -2480,7 +2480,6 @@ function BBSTestPage() {
 
   // 영상 업로드 핸들러 — 현재 항목(currentItem) 기반
   const curVid = itemVideos[currentItem] || {};
-  const [pendingAutoStart, setPendingAutoStart] = useState(false);
 
   const handleSideSelect = (file) => {
     const url = URL.createObjectURL(file);
@@ -2489,7 +2488,6 @@ function BBSTestPage() {
       next[currentItem] = { ...next[currentItem], sideFile: file, sideUrl: url };
       return next;
     });
-    if (!showSetup) setPendingAutoStart(true);
   };
   const handleSideRemove = () => {
     if (curVid.sideUrl) URL.revokeObjectURL(curVid.sideUrl);
@@ -2506,7 +2504,6 @@ function BBSTestPage() {
       next[currentItem] = { ...next[currentItem], frontFile: file, frontUrl: url };
       return next;
     });
-    if (!showSetup) setPendingAutoStart(true);
   };
   const handleFrontRemove = () => {
     if (curVid.frontUrl) URL.revokeObjectURL(curVid.frontUrl);
@@ -2517,13 +2514,6 @@ function BBSTestPage() {
     });
   };
 
-  // 영상 업로드 후 자동 분석 시작 (state 반영 후 실행)
-  useEffect(() => {
-    if (pendingAutoStart && videoUrl && !isAnalyzing && !showSetup) {
-      setPendingAutoStart(false);
-      if (startItemRef.current) startItemRef.current();
-    }
-  }, [pendingAutoStart, videoUrl, isAnalyzing, showSetup]);
 
   // 영상 재생 종료 시 강제 점수 계산
   useEffect(() => {
